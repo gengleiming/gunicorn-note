@@ -6,6 +6,7 @@
 import io
 import re
 import socket
+from typing import Any
 
 from gunicorn.http.body import ChunkedReader, LengthReader, EOFReader, Body
 from gunicorn.http.errors import (
@@ -15,6 +16,7 @@ from gunicorn.http.errors import (
 )
 from gunicorn.http.errors import InvalidProxyLine, ForbiddenProxyRequest
 from gunicorn.http.errors import InvalidSchemeHeaders
+from gunicorn.http.unreader import SocketUnreader, IterUnreader
 from gunicorn.util import bytes_to_str, split_request_uri
 
 MAX_REQUEST_LINE = 8190
@@ -162,7 +164,8 @@ class Message(object):
 
 
 class Request(Message):
-    def __init__(self, cfg, unreader, peer_addr, req_number=1):
+    # gunicorn-note: 指定 unreader 类型为 SocketUnreader 或 IterUnreader
+    def __init__(self, cfg, unreader: Any[SocketUnreader, IterUnreader], peer_addr, req_number=1):
         self.method = None
         self.uri = None
         self.path = None

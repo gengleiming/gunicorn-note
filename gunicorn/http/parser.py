@@ -2,6 +2,7 @@
 #
 # This file is part of gunicorn released under the MIT license.
 # See the NOTICE for more information.
+from typing import Any
 
 from gunicorn.http.message import Request
 from gunicorn.http.unreader import SocketUnreader, IterUnreader
@@ -9,7 +10,8 @@ from gunicorn.http.unreader import SocketUnreader, IterUnreader
 
 class Parser(object):
 
-    mesg_class = None
+    # gunicorn-note: 默认为 Request 类
+    mesg_class: Request.__class__ = None
 
     def __init__(self, cfg, source, source_addr):
         self.cfg = cfg
@@ -17,7 +19,7 @@ class Parser(object):
             self.unreader = SocketUnreader(source)
         else:
             self.unreader = IterUnreader(source)
-        self.mesg = None
+        self.mesg: Request = None
         self.source_addr = source_addr
 
         # request counter (for keepalive connetions)
@@ -32,7 +34,9 @@ class Parser(object):
             raise StopIteration()
 
         # Discard any unread body of the previous message
+        # gunicorn-note: 默认 self.mesg 是Request的实例
         if self.mesg:
+            # gunicorn-note: read 会调用 SocketUnreader 的 chunk 方法，进行socket recv
             data = self.mesg.body.read(8192)
             while data:
                 data = self.mesg.body.read(8192)

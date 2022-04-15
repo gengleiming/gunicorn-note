@@ -69,6 +69,14 @@ class BaseApplication(object):
 
     def run(self):
         try:
+            # gunicorn-note:
+            #  1. Arbiter(self) 初始化：
+            #     - 读取配置项，如worker数量，worker工作模式，监听的地址等
+            #  2. run()
+            #     - 初始化信号处理函数
+            #     - 建立socket，不过并不listen
+            #     - fork出所有的worker进程；
+            #     - 最后进入循环：处理信号队列中的信号，杀掉并重启失去响应的子进程，如果没事儿干，就“sleep”一会儿。
             Arbiter(self).run()
         except RuntimeError as e:
             print("\nError: %s\n" % e, file=sys.stderr)

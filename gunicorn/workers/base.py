@@ -115,6 +115,7 @@ class Worker(object):
 
         self.log.close_on_exec()
 
+        # gunicorn-note: 初始化子进程的信号，绑定处理函数
         self.init_signals()
 
         # start the reloader
@@ -131,6 +132,7 @@ class Worker(object):
             self.reloader = reloader_cls(extra_files=self.cfg.reload_extra_files,
                                          callback=changed)
 
+        # application对象
         self.load_wsgi()
         if self.reloader:
             self.reloader.start()

@@ -23,14 +23,18 @@ class Arbiter(object):
     Arbiter maintain the workers processes alive. It launches or
     kills them if needed. It also manages application reloading
     via SIGHUP/USR2.
+    gunicorn-note: 维护worker存活. 在需要的时候杀死worker。它还通过信号 SIGHUP/USR2 来管理应用的重新加载
     """
 
     # A flag indicating if a worker failed to
     # to boot. If a worker process exist with
     # this error code, the arbiter will terminate.
+    # gunicorn-note: worker boot失败的错误码
+    # gunicorn-note: 如果发生此错误码，arbiter会终止此 worker 进程
     WORKER_BOOT_ERROR = 3
 
     # A flag indicating if an application failed to be loaded
+    # gunicorn-note: 应用程序加载失败的错误码
     APP_LOAD_ERROR = 4
 
     START_CTX = {}
@@ -66,10 +70,14 @@ class Arbiter(object):
 
         cwd = util.getcwd()
 
+        # gunicorn-note: sys.argv 用于表示程序启动命令的参数
         args = sys.argv[:]
+        # gunicorn-note: sys.executable 提供 Python 解释器的可执行二进制文件的绝对路径
+        # gunicorn-note: 示例 sys.executable='/usr/lib/bin/python'
         args.insert(0, sys.executable)
 
         # init start context
+        # gunicorn-note: 示例：args=['/usr/lib/bin/python', '/data/gunicorn-note/examples/standalone_app.py']
         self.START_CTX = {
             "args": args,
             "cwd": cwd,
@@ -137,6 +145,7 @@ class Arbiter(object):
             self.pidfile.create(self.pid)
         self.cfg.on_starting(self)
 
+        # 初始化信号函数
         self.init_signals()
 
         if not self.LISTENERS:
@@ -176,6 +185,22 @@ class Arbiter(object):
             os.close(p)
 
         # initialize the pipe
+        # gunicorn-note: 创建匿名管道
+        #  ----------------------
+        #  单工：简单的说就是一方只能发信息，另一方则只能收信息，通信是单向的。
+        #  半双工：比单工先进一点，就是双方都能发信息，但同一时间则只能一方发信息。
+        #  全双工：比半双工再先进一点，就是双方不仅都能发信息，而且能够同时发送。
+        #  ----------------------
+        #  匿名管道：
+        #  - 只能用于具有亲缘关系的进程之间的通信（父子进程或者兄弟进程）;
+        #  - 半双工；
+        #  - 匿名管道中的文件不会写到磁盘上，而命名管道中的文件会写到磁盘上；
+        #  ----------------------
+        #  - Pipe属于半双工
+        #  - 遵循 先进先出 规则
+        #  - 进程试图读一个空管道时，在数据写入管道前，进程将一直阻塞。同样，管道已经满时，在其它进程从管道中读走数据之前，写进程将一直阻塞。
+        #  ----------------------
+        #  os.pipe 创建一个管道，用于父子进程通信
         self.PIPE = pair = os.pipe()
         for p in pair:
             util.set_non_blocking(p)
@@ -184,6 +209,7 @@ class Arbiter(object):
         self.log.close_on_exec()
 
         # initialize all signals
+        # gunicorn-note: 绑定信号处理函数
         for s in self.SIGNALS:
             signal.signal(s, self.signal)
         signal.signal(signal.SIGCHLD, self.handle_chld)
@@ -191,6 +217,7 @@ class Arbiter(object):
     def signal(self, sig, frame):
         if len(self.SIG_QUEUE) < 5:
             self.SIG_QUEUE.append(sig)
+            # gunicorn-note: 通过管道唤醒主进程，主进程会从sleep中醒来，继续去轮询 self.SIG_QUEUE，进而处理信号
             self.wakeup()
 
     def run(self):
@@ -206,8 +233,12 @@ class Arbiter(object):
 
                 sig = self.SIG_QUEUE.pop(0) if self.SIG_QUEUE else None
                 if sig is None:
+                    # gunicorn-note: 休眠1秒，或者收到子进程信号时立即跳出休眠
                     self.sleep()
+                    # gunicorn-note: sleep1秒或者被子进程唤醒之后，开始检测杀死超时worker
                     self.murder_workers()
+                    # gunicorn-note: sleep1秒或者被子进程唤醒之后，开始检测管理worker
+                    #  worker少了就新增，多了就杀死
                     self.manage_workers()
                     continue
 
@@ -354,6 +385,9 @@ class Arbiter(object):
         A readable PIPE means a signal occurred.
         """
         try:
+            # gunicorn-note:
+            #  - 调用select读取管道数据，1秒超时返回
+            #  - 当子进程发送信号时(会调用信号绑定的函数 self.signal，然后调用self.wake_up对管道写数据)，触发select返回
             ready = select.select([self.PIPE[0]], [], [], 1.0)
             if not ready[0]:
                 return
@@ -541,11 +575,13 @@ class Arbiter(object):
         Maintain the number of workers by spawning or killing
         as required.
         """
+        # gunicorn-note: worker数量不够，那么新增
         if len(self.WORKERS) < self.num_workers:
             self.spawn_workers()
 
         workers = self.WORKERS.items()
         workers = sorted(workers, key=lambda w: w[1].age)
+        # gunicorn-note: worker数量多了，那么杀死多余的
         while len(workers) > self.num_workers:
             (pid, _) = workers.pop(0)
             self.kill_worker(pid, signal.SIGTERM)
@@ -559,12 +595,18 @@ class Arbiter(object):
                                   "mtype": "gauge"})
 
     def spawn_worker(self):
+        """
+        gunicorn-note: 创建子进程worker
+        """
         self.worker_age += 1
         worker = self.worker_class(self.worker_age, self.pid, self.LISTENERS,
                                    self.app, self.timeout / 2.0,
                                    self.cfg, self.log)
         self.cfg.pre_fork(self, worker)
         pid = os.fork()
+        # gunicorn-note: os.fork 一次调用两次返回
+        #  主进程把worker子进程添加到self.WORKERS中
+        #  子进程
         if pid != 0:
             worker.pid = pid
             self.WORKERS[pid] = worker
@@ -610,6 +652,7 @@ class Arbiter(object):
 
         This is where a worker process leaves the main loop
         of the master process.
+        gunicorn-note: 如果worker数量不够，那么新增
         """
 
         for _ in range(self.num_workers - len(self.WORKERS)):

@@ -25,9 +25,11 @@ class StopWaiting(Exception):
 class SyncWorker(base.Worker):
 
     def accept(self, listener):
+        # gunicorn-note: 三次握手
         client, addr = listener.accept()
         client.setblocking(1)
         util.close_on_exec(client)
+        # gunicorn-note: 接收请求
         self.handle(listener, client, addr)
 
     def wait(self, timeout):
@@ -59,6 +61,7 @@ class SyncWorker(base.Worker):
     def run_for_one(self, timeout):
         listener = self.sockets[0]
         while self.alive:
+            # gunicorn-note: 更新 last_update 的时间，主进程会检测last_update来判断子进程时候存活
             self.notify()
 
             # Accept a connection. If we get an error telling us
@@ -66,6 +69,7 @@ class SyncWorker(base.Worker):
             # select which is where we'll wait for a bit for new
             # workers to come give us some love.
             try:
+                # gunicorn-note: 三次握手建立连接，并接收请求内容。实际相当于accept + recv
                 self.accept(listener)
                 # Keep processing clients until no one is waiting. This
                 # prevents the need to select() for every client that we
@@ -132,6 +136,7 @@ class SyncWorker(base.Worker):
                                          **self.cfg.ssl_options)
 
             parser = http.RequestParser(self.cfg, client, addr)
+            # gunicorn-note: 执行socket的recv函数，接收请求数据
             req = next(parser)
             self.handle_request(listener, req, client, addr)
         except http.errors.NoMoreData as e:
