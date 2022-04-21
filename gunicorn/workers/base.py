@@ -101,6 +101,7 @@ class Worker(object):
         util.seed()
 
         # For waking ourselves up
+        # gunicorn-note: 管道建立，目的是自我通信，唤醒自己
         self.PIPE = os.pipe()
         for p in self.PIPE:
             util.set_non_blocking(p)

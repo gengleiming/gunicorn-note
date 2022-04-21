@@ -77,6 +77,13 @@ class SyncWorker(base.Worker):
                 continue
 
             except EnvironmentError as e:
+                # gunicorn-note:
+                #  EAGAIN (等价于windows上的EWOULDBLOCK)
+                #  - accept: 如果socket设置为非阻塞，accept时没有客户端连接，那么会报 EAGAIN = 11，此时捕获异常重试即可。
+                #  - read: 如果accept返回的连接设置为非阻塞，，read没有读到数据，那么会报 EAGAIN = 11，此时捕获异常重试即可。
+                #  - write/send: 对于非阻塞socket，缓冲区满了，那么会报 EAGAIN = 11，此时捕获异常重试即可。
+                #  ECONNABORTED 软件引起的连接中止
+                #  - 当服务和客户进程在完成用于 TCP 连接的“三次握手”后，客户 TCP 发送了一个 RST （复位）。
                 if e.errno not in (errno.EAGAIN, errno.ECONNABORTED,
                                    errno.EWOULDBLOCK):
                     raise

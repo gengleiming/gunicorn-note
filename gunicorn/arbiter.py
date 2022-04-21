@@ -145,7 +145,7 @@ class Arbiter(object):
             self.pidfile.create(self.pid)
         self.cfg.on_starting(self)
 
-        # 初始化信号函数
+        # gunicorn-note: 初始化信号，绑定信号函数
         self.init_signals()
 
         if not self.LISTENERS:
@@ -161,6 +161,7 @@ class Arbiter(object):
                 for fd in os.environ.pop('GUNICORN_FD').split(','):
                     fds.append(int(fd))
 
+            # gunicorn-note: 创建socket，设置非阻塞，监听socket
             self.LISTENERS = sock.create_sockets(self.cfg, self.log, fds)
 
         listeners_str = ",".join([str(l) for l in self.LISTENERS])
@@ -200,7 +201,10 @@ class Arbiter(object):
         #  - 遵循 先进先出 规则
         #  - 进程试图读一个空管道时，在数据写入管道前，进程将一直阻塞。同样，管道已经满时，在其它进程从管道中读走数据之前，写进程将一直阻塞。
         #  ----------------------
-        #  os.pipe 创建一个管道，用于父子进程通信
+        #  os.pipe 创建一个管道
+        #  主进程会无限循环，同时在sleep里用select监听管道
+        #  当有信号发送到主进程，那么会执行信号处理函数，信号处理函数会向管道中写入数据，触发select返回，唤醒主进程
+        #  唤醒主进程之后，主进程立即开始管理进程
         self.PIPE = pair = os.pipe()
         for p in pair:
             util.set_non_blocking(p)
@@ -222,6 +226,7 @@ class Arbiter(object):
 
     def run(self):
         "Main master loop."
+        # gunicorn-note: 初始化信号，创建socket并监听
         self.start()
         util._setproctitle("master [%s]" % self.proc_name)
 
@@ -387,7 +392,7 @@ class Arbiter(object):
         try:
             # gunicorn-note:
             #  - 调用select读取管道数据，1秒超时返回
-            #  - 当子进程发送信号时(会调用信号绑定的函数 self.signal，然后调用self.wake_up对管道写数据)，触发select返回
+            #  - 当主进程收到信号时(会调用信号绑定的函数 self.signal，然后调用self.wake_up对管道写数据)，触发select返回，唤醒主进程
             ready = select.select([self.PIPE[0]], [], [], 1.0)
             if not ready[0]:
                 return

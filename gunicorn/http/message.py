@@ -165,7 +165,7 @@ class Message(object):
 
 class Request(Message):
     # gunicorn-note: 指定 unreader 类型为 SocketUnreader 或 IterUnreader
-    def __init__(self, cfg, unreader: Any[SocketUnreader, IterUnreader], peer_addr, req_number=1):
+    def __init__(self, cfg, unreader, peer_addr, req_number=1):
         self.method = None
         self.uri = None
         self.path = None
