@@ -38,6 +38,8 @@ class SyncWorker(base.Worker):
             ret = select.select(self.wait_fds, [], [], timeout)
             if ret[0]:
                 if self.PIPE[0] in ret[0]:
+                    # gunicorn-note: os.read(fd, n) fd-文件描述符，n-读取的字节
+                    #  当管道有数据，唤醒select，如果self.alive=False，说明可能有quit或exit信号，那么根据循环的判断条件self.alive而跳出循环，进而退出进程
                     os.read(self.PIPE[0], 1)
                 return ret[0]
 
@@ -70,6 +72,10 @@ class SyncWorker(base.Worker):
             # workers to come give us some love.
             try:
                 # gunicorn-note: 三次握手建立连接，并接收请求内容。实际相当于accept + recv
+                #  此处的accept完成的工作为：调用socket的accept建立一个连接，然后循环调用read读取此次请求的所有数据
+                #  self.accept 中，socket.recv异常已经在内部捕获，所以此处捕获的异常是socket.accept，因此如果socket.accept无异常，那么会循环执行socket.accept
+                #  下方select能够感知到有事件到来，当有事件到来时才需要执行accept，节省了资源。
+                print("self.accept")
                 self.accept(listener)
                 # Keep processing clients until no one is waiting. This
                 # prevents the need to select() for every client that we
@@ -92,6 +98,8 @@ class SyncWorker(base.Worker):
                 return
 
             try:
+                # gunicorn-note: 此处执行select调用，当select感知到有事件到来，那么开始循环执行 self.accept
+                #  直到 self.accept 处理了所有事件开始空闲，那么会触发EAGAIN异常，再次进入select调用
                 self.wait(timeout)
             except StopWaiting:
                 return

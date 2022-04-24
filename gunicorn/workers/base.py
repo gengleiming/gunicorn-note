@@ -101,7 +101,7 @@ class Worker(object):
         util.seed()
 
         # For waking ourselves up
-        # gunicorn-note: 管道建立，目的是自我通信，唤醒自己
+        # gunicorn-note: 管道建立，目的是自我通信，唤醒自己，比如 reload
         self.PIPE = os.pipe()
         for p in self.PIPE:
             util.set_non_blocking(p)
@@ -112,6 +112,7 @@ class Worker(object):
             util.close_on_exec(s)
         util.close_on_exec(self.tmp.fileno())
 
+        # gunicorn-note: 准备select的文件描述符列表，包含监听socket和
         self.wait_fds = self.sockets + [self.PIPE[0]]
 
         self.log.close_on_exec()
@@ -185,6 +186,7 @@ class Worker(object):
         signal.siginterrupt(signal.SIGUSR1, False)
 
         if hasattr(signal, 'set_wakeup_fd'):
+            # gunicorn-note: set_wakeup_fd 触发到signal时,会往fd中写入'\0'，那么select就会被唤醒
             signal.set_wakeup_fd(self.PIPE[1])
 
     def handle_usr1(self, sig, frame):
@@ -194,6 +196,7 @@ class Worker(object):
         self.alive = False
 
     def handle_quit(self, sig, frame):
+        print("handle_quit")
         self.alive = False
         # worker_int callback
         self.cfg.worker_int(self)
