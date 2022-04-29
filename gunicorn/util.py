@@ -244,8 +244,11 @@ def parse_address(netloc, default_port='8000'):
 
 
 def close_on_exec(fd):
+    # gunicorn-note: F_GETFD 获得fd的close-on-exec文件描述符标志
     flags = fcntl.fcntl(fd, fcntl.F_GETFD)
+    # gunicorn-note: 在标志上添加 close-on-exec
     flags |= fcntl.FD_CLOEXEC
+    # gunicorn-note: 设置 close-on-exec
     fcntl.fcntl(fd, fcntl.F_SETFD, flags)
 
 
